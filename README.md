@@ -1,5 +1,5 @@
 # Note
-This is my version of the projet, adapted for fiting to my framework DTOs
+This is my version of the projet, adapted for fiting to my framework DTOs. So unless you have my frameworks (and you certainly don't) this is useless.
 # MySQL-To-CSharp
 This tool generates C# classes and markup pages for entire MySQL databases (including tables).
 
