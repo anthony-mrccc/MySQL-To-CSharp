@@ -23,7 +23,13 @@ namespace MySQL_To_CSharp
             parser.Setup(arg => arg.Database).As('d', "database").Required().WithDescription("Database name");
             parser.Setup(arg => arg.Table).As('t', "table").SetDefault(string.Empty)
                 .WithDescription("(optional) Table name, will generate entire database if not specified");
-            parser.Setup(arg => arg.GenerateConstructorAndOutput).As('g', "generateconstructorandoutput")
+            parser.Setup(arg => arg.Namespace).As("ns").SetDefault(string.Empty)
+                .WithDescription("namespace");
+            parser.Setup(arg => arg.GenerateConstructorAndOutput).As('g', "generatequery")
+                .SetDefault(false)
+                .WithDescription(
+                    "(optional) Generate a reading constructor - Activate with -c true");
+            parser.Setup(arg => arg.Constructor).As('c', "generateconstructor")
                 .SetDefault(false)
                 .WithDescription(
                     "(optional) Generate a reading constructor and SQL statement output - Activate with -g true");
@@ -34,6 +40,8 @@ namespace MySQL_To_CSharp
             parser.Setup(arg => arg.MarkupDatabaseNameReplacement).As('r', "markupdatabasenamereplacement")
                 .SetDefault("")
                 .WithDescription("(optional) Will use this instead of database name for wiki breadcrump generation");
+            parser.Setup(arg => arg.Path).As('o')
+                .WithDescription("(optional) Output path");
             parser.SetupHelp("?", "help").Callback(text => Console.WriteLine(text));
 
             var result = parser.Parse(args);
@@ -92,7 +100,10 @@ namespace MySQL_To_CSharp
                     con.Close();
                 }
 
-                DbToClasses(conf.Database, database, conf.GenerateConstructorAndOutput);
+                string path = conf.Database;
+                if (conf.Path != "" && conf != null)
+                    path = conf.Path;
+                DbToClasses(conf.Database, database, conf.GenerateConstructorAndOutput, conf.Constructor, conf.Namespace, path);
                 if (conf.GenerateMarkupPages)
                     DbToMarkupPage(
                         string.IsNullOrEmpty(conf.MarkupDatabaseNameReplacement)
@@ -105,34 +116,33 @@ namespace MySQL_To_CSharp
         }
 
         private static void DbToClasses(string dbName, Dictionary<string, List<Column>> db,
-            bool generateConstructorAndOutput)
+            bool generateConstructorAndOutput, bool generateCtor, string nmspace, string path)
         {
-            if (!Directory.Exists(dbName))
-                Directory.CreateDirectory(dbName);
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
 
             var sb = new StringBuilder();
             foreach (var table in db)
             {
-                sb.AppendLine($"public class {table.Key}");
+                // usings
+                sb.AppendLine("using System;\r\nusing System.Data;\r\n");
+
+                sb.AppendLine($"namespace {nmspace}");
+                sb.AppendLine("{");
+                sb.AppendLine($"public class {table.Key.FirstCharUpper()}DTOContainer : DTOContainer");
                 sb.AppendLine("{");
 
                 // properties
                 foreach (var column in table.Value)
                     sb.AppendLine(column.ToString());
 
-                if (generateConstructorAndOutput)
+                if (generateCtor)
                 {
                     // constructor
-                    sb.AppendLine($"{Environment.NewLine}public {table.Key}(MySqlDataReader reader)");
-                    sb.AppendLine("{");
-                    foreach (var column in table.Value)
-                        // check which type and use correct get method instead of casting
-                        if (column.Type != typeof(string))
-                            sb.AppendLine($"{column.Name.FirstCharUpper()} = reader.Get{column.Type.Name}(\"{column.Name}\");");
-                        else
-                            sb.AppendLine($"{column.Name.FirstCharUpper()} = reader.GetString(\"{column.Name}\");");
-                    sb.AppendLine($"}}{Environment.NewLine}");
-
+                    sb.AppendLine($"{Environment.NewLine}public {table.Key.FirstCharUpper()}DTOContainer(IDataReader reader) : base(reader) {{ }} {Environment.NewLine}");
+                }
+                if (generateConstructorAndOutput)
+                {
                     // update query
                     sb.AppendLine("public string UpdateQuery()");
                     sb.AppendLine("{");
@@ -160,10 +170,28 @@ namespace MySQL_To_CSharp
                     sb.AppendLine("}");
                 }
 
-                // class closing
+                // DTOContainer impl
+                sb.AppendLine("public override void AddFields(IDataReader reader)");
+                sb.AppendLine("{");
+                int i = 0;
+                foreach (var column in table.Value)
+                {
+                    // check which type and use correct get method instead of casting
+                    if (column.Type != typeof(string))
+                        sb.AppendLine($"{column.Name.FirstCharUpper()} = reader.Get{column.Type.Name}({i});");
+                    else
+                        sb.AppendLine($"{column.Name.FirstCharUpper()} = reader.GetString({i});");
+                    i++;
+                }
                 sb.AppendLine("}");
 
-                var sw = new StreamWriter($"{dbName}/{table.Key}.cs", false);
+                // class closing
+                sb.AppendLine("}");
+                // namespace closing
+                sb.AppendLine("}");
+
+
+                var sw = new StreamWriter($"{path}/{table.Key}.cs", false);
                 sw.Write(sb.ToString());
                 sw.Close();
                 sb.Clear();

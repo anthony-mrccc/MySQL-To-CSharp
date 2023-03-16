@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Runtime.CompilerServices;
 using MySql.Data.MySqlClient;
 
 namespace MySQL_To_CSharp
@@ -17,7 +18,7 @@ namespace MySQL_To_CSharp
 
         public override string ToString()
         {
-            return $"public {Type.Name} {Name.FirstCharUpper()} {{ get; set; }}";
+            return $"public {Type.Name}? {Name.FirstCharUpper()} {{ get; set; }}";
         }
     }
 }

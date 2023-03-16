@@ -11,5 +11,8 @@
         public bool GenerateConstructorAndOutput { get; set; }
         public bool GenerateMarkupPages { get; set; }
         public string MarkupDatabaseNameReplacement { get; set; }
+        public bool Constructor { get; set; }
+        public string Namespace { get; set; }
+        public string Path { get; set; }
     }
 }
