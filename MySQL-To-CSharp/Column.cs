@@ -18,7 +18,7 @@ namespace MySQL_To_CSharp
 
         public override string ToString()
         {
-            return $"public {Type.Name}? {Name.FirstCharUpper()} {{ get; set; }}";
+            return $"[DbName(\"{Name}\")]\r\npublic {Type.Name}? {Name.FirstCharUpper()} {{ get; set; }}";
         }
     }
 }

@@ -129,6 +129,7 @@ namespace MySQL_To_CSharp
 
                 sb.AppendLine($"namespace {nmspace}");
                 sb.AppendLine("{");
+                sb.AppendLine($"[DbTableName(\"{table.Key}\")]");
                 sb.AppendLine($"public class {table.Key.FirstCharUpper()}DTOContainer : DTOContainer");
                 sb.AppendLine("{");
 
