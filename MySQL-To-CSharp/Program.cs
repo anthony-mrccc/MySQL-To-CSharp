@@ -191,7 +191,7 @@ namespace MySQL_To_CSharp
                 sb.AppendLine("}");
 
 
-                var sw = new StreamWriter($"{path}/{table.Key}.cs", false);
+                var sw = new StreamWriter($"{path}/{table.Key.FirstCharUpper()}DTOContainer.cs", false);
                 sw.Write(sb.ToString());
                 sw.Close();
                 sb.Clear();
