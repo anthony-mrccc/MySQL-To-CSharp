@@ -1,9 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection.Emit;
 using System.Text;
+using System.Xml.Linq;
 using Fclp;
 using MySql.Data.MySqlClient;
+using MySqlX.XDevAPI.Relational;
+using System.Drawing;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+using System.Linq;
 
 namespace MySQL_To_CSharp
 {
@@ -103,16 +112,241 @@ namespace MySQL_To_CSharp
                 string path = conf.Database;
                 if (conf.Path != "" && conf != null)
                     path = conf.Path;
-                DbToClasses(conf.Database, database, conf.GenerateConstructorAndOutput, conf.Constructor, conf.Namespace, path);
+
+                Stopwatch sw = Stopwatch.StartNew();
+                DbToClasses(conf.Database, database, conf.GenerateConstructorAndOutput, conf.Constructor, conf.Namespace, path + @"\DTO\Containers\" + conf.Database);
+                // Search
+                DbToForm(path + @"\DTOContextForms\" + conf.Database + @"\search\", conf.Namespace, "SearchForm", database);
+                DbToDesigner(path + @"\DTOContextForms\" + conf.Database + @"\search\", conf.Namespace, "SearchForm", database);
+
+                // Update
+                DbToForm(path + @"\DTOContextForms\" + conf.Database + @"\update\", conf.Namespace, "UpdateForm", database);
+                DbToDesigner(path + @"\DTOContextForms\" + conf.Database + @"\update\", conf.Namespace, "UpdateForm", database);
+
+                // Insert
+                DbToForm(path + @"\DTOContextForms\" + conf.Database + @"\insert\", conf.Namespace, "InsertForm", database);
+                DbToDesigner(path + @"\DTOContextForms\" + conf.Database + @"\insert\", conf.Namespace, "InsertForm", database);
                 if (conf.GenerateMarkupPages)
                     DbToMarkupPage(
                         string.IsNullOrEmpty(conf.MarkupDatabaseNameReplacement)
                             ? conf.Database
                             : conf.MarkupDatabaseNameReplacement, database);
-                Console.WriteLine("Successfully generated C# classes!");
+                sw.Stop();
+                Console.WriteLine("Successfully generated C# classes in " + sw.ElapsedMilliseconds + "ms!");
             }
 
             Console.ReadLine();
+        }
+
+        private static void DbToWindowsForms(string path, string nmspace, string filename, Dictionary<string, List<Column>> db)
+        {
+            DbToForm(path, nmspace, filename, db);
+            DbToDesigner(path, nmspace, filename, db);
+        }
+
+        private static void DbToForm(string path, string nmspace, string filename, Dictionary<string, List<Column>> db)
+        {
+            string filePartial = "Frm";
+            foreach (var item in db)
+            {
+                string className = filePartial + item.Key.FirstCharUpper() + filename;
+                TableToForm(path, $"{className}.cs",className, item.Key.FirstCharUpper(), nmspace, item.Value);
+            }
+        }
+
+        private static void TableToForm(string path, string filename, string className, string tablename, string nmspace, List<Column> cols)
+        {
+            Dictionary<string, List<Element>> colNamesDict = PopulateDict(cols);
+
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
+
+            string source = $@"
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using {nmspace}{Options.DTO_CONTAINERS_NMSP_PATH};
+
+namespace {nmspace}{Options.DTOFORMS_NMSP_PATH}
+{{
+    public partial class {className}: FrmSearch
+    {{
+        public {className}()
+        {{
+            InitializeComponent();
+        }}
+
+        private void btnReturn_Click(object sender, EventArgs e)
+        {{
+            Return();
+        }}
+
+        private void btnSearch_Click(object sender, EventArgs e)
+        {{
+            {GenerateDTOConstruction(tablename + "DTOContainer",colNamesDict)}
+            Search(container);
+        }}
+    }}
+}}
+";
+            var sw = new StreamWriter($"{path}\\{filename}", false);
+            sw.Write(source);
+            sw.Close();
+        }
+
+        private static string GenerateDTOConstruction(string dtoName, Dictionary<string, List<Element>> colNamesDict)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append($"IDTOContainer container = new {dtoName}(");
+            List<string> parameters = new List<string>();
+            foreach (var els in colNamesDict.Values)
+            {
+                for (int i = 0; i < els.Count; i++)
+                {
+                    ColName colName = els[i].ColName;
+                    if (colName.WinFormsClass != "Label" && colName.WinFormsClass != "Button")
+                    {
+                        if (colName.WinFormsClass == "TextBox")
+                        {
+                            parameters.Add($"{colName.FullName}.Text");
+                        }
+                        else if (colName.WinFormsClass == "NumericUpDown")
+                        {
+                            parameters.Add($"({els[i].Type.Name}?){colName.FullName}.Value");
+                        }
+                        else
+                        {
+                            parameters.Add($"{colName.FullName}.Value");
+                        }
+                    }
+                }
+            }
+            sb.Append(string.Join(",", parameters));
+            sb.Append(");");
+            return sb.ToString();
+        }
+
+        private static void DbToDesigner(string path, string nmspace, string filename, Dictionary<string, List<Column>> db)
+        {
+            string filePartial = "Frm";
+            foreach (var item in db)
+            {
+                string className = filePartial + item.Key.FirstCharUpper() + filename;
+                TableToDesigner(path, $"{className}.Designer.cs", className, nmspace, item.Key, item.Value);
+            }
+        }
+
+        private static void TableToDesigner(string path, string filename, string className, string nmspace, string nm, List<Column> cols)
+        {
+            nm.FirstCharUpper();
+
+            Dictionary<string, List<Element>> colNamesDict = PopulateDict(cols);
+
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
+            var sb = new StringBuilder();
+
+            string source = GenerateTableDesignerSourceCode(nmspace, className, colNamesDict);
+
+            var sw = new StreamWriter($"{path}\\{filename}", false);
+            sw.Write(source);
+            sw.Close();
+            sb.Clear();
+        }
+
+        private static Dictionary<string, List<Element>> PopulateDict(List<Column> cols)
+        {
+            Dictionary<string, List<Element>> colNamesDict = new Dictionary<string, List<Element>>();
+            // populate dict
+            int i = 0;
+            foreach (var col in cols)
+            {
+                colNamesDict.Add(col.Name, new List<Element>()
+                {
+                    new Element(new ColName(col.Name.FirstCharUpper(),Options.LABEL_SUFFIX, Options.LABEL_WINFORMS_CLASS)) // Label
+                    {
+                        FontSize = 14F,
+                        Location = new Point(Options.startPoint.X, Options.startPoint.Y + Options.SPACE_ELEMENTS * i),
+                        Size = new Size(30,30),
+                        TabIndex = i,
+                        Text = col.Name.FirstCharUpper(),
+                    },
+                    new Element(new ColName(col)) // Field
+                    {
+                        FontSize = 14F,
+                        Location = new Point(Options.startPoint.X + Options.DISTANCE_LABEL_ELEMENT,Options.startPoint.Y + Options.SPACE_ELEMENTS * i),
+                        Size = new Size(Options.ELEMENT_SIZE,20),
+                        TabIndex = i+1,
+                        Text = col.Name.FirstCharUpper(),
+                        Type = col.Type
+                    }
+                });
+                i++;
+            }
+            colNamesDict.Add("search", new List<Element>() {
+                new Element(new ColName("Search", Options.BUTTON_SUFFIX, Options.BUTTON_WINFORMS_CLASS))
+                {
+                    FontSize = 18F,
+                    Location = new Point(231,358),
+                    Size = new Size(209,80),
+                    TabIndex = i+1,
+                    Text = "Rechercher",
+                    ClickEvent = true
+                }
+            });
+            colNamesDict.Add("return", new List<Element>() {
+                new Element(new ColName("Return", Options.BUTTON_SUFFIX, Options.BUTTON_WINFORMS_CLASS))
+                {
+                    FontSize = 18F,
+                    Location = new Point(12,358),
+                    Size = new Size(209,80),
+                    TabIndex = i+2,
+                    Text = "Retour",
+                    ClickEvent = true
+                }
+            });
+            return colNamesDict;
+        }
+
+        private static string GenerateTableDesignerSourceCode(string nmspace, string className, Dictionary<string, List<Element>> colNamesDict)
+        {
+            string source = $@"
+namespace {nmspace}{Options.DTOFORMS_NMSP_PATH}
+{{
+    partial class {className}
+    {{
+        /// <summary>
+        /// Required designer variable.
+        /// </summary>
+        private System.ComponentModel.IContainer components = null;
+
+        /// <summary>
+        /// Clean up any resources being used.
+        /// </summary>
+        /// <param name=""disposing"">true if managed resources should be disposed; otherwise, false.</param>
+        protected override void Dispose(bool disposing)
+        {{
+            if (disposing && (components != null))
+            {{
+                components.Dispose();
+            }}
+            base.Dispose(disposing);
+        }}
+
+        #region Windows Form Designer generated code
+        {DesignerGenerator.GenerateInitializeComponent(colNamesDict, className)}
+        #endregion
+        {DesignerGenerator.GenerateFields(colNamesDict)}
+    }}
+}}
+";
+            return source;
         }
 
         private static void DbToClasses(string dbName, Dictionary<string, List<Column>> db,
@@ -127,7 +361,7 @@ namespace MySQL_To_CSharp
                 // usings
                 sb.AppendLine("using System;\r\nusing System.Data;\r\n");
 
-                sb.AppendLine($"namespace {nmspace}");
+                sb.AppendLine($"namespace {nmspace}{Options.DTO_CONTAINERS_NMSP_PATH}");
                 sb.AppendLine("{");
                 sb.AppendLine($"[DbTableName(\"{table.Key}\")]");
                 sb.AppendLine($"public class {table.Key.FirstCharUpper()}DTOContainer : DTOContainer");
@@ -141,6 +375,20 @@ namespace MySQL_To_CSharp
                 {
                     // constructor
                     sb.AppendLine($"{Environment.NewLine}public {table.Key.FirstCharUpper()}DTOContainer(IDataReader reader) : base(reader) {{ }} {Environment.NewLine}");
+                    // second ctor
+                    sb.Append($"{Environment.NewLine}public {table.Key.FirstCharUpper()}DTOContainer(");
+                    string[] parameters = new string[table.Value.Count];
+                    for (int j = 0; j < parameters.Length; j++)
+                    {
+                        parameters[j] = $"{table.Value[j].Type.Name}? {table.Value[j].Name}";
+                    }
+                    sb.Append(string.Join(",", parameters));
+                    sb.AppendLine(")\r\n{");
+                    for (int j = 0; j < parameters.Length; j++)
+                    {
+                        sb.AppendLine($"this.{table.Value[j].Name.FirstCharUpper()} = {table.Value[j].Name};");
+                    }
+                    sb.AppendLine("}");
                 }
                 if (generateConstructorAndOutput)
                 {
