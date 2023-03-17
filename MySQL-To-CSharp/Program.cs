@@ -67,7 +67,7 @@ namespace MySQL_To_CSharp
                     using (var cmd = con.CreateCommand())
                     {
                         cmd.CommandText =
-                            $"SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{conf.Database}'";
+                            $"SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, COLUMN_KEY FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{conf.Database}'";
                         if (!conf.Table.Equals(string.Empty))
                             cmd.CommandText += $" AND TABLE_NAME = '{conf.Table}'";
 
@@ -185,6 +185,8 @@ namespace MySQL_To_CSharp
                     i++;
                 }
                 sb.AppendLine("}");
+
+
 
                 // class closing
                 sb.AppendLine("}");
