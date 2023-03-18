@@ -1,4 +1,8 @@
-﻿using System;
+﻿/*
+ * WARNING : THIS NEED A LOT OF REFACTORING !!!!!!!!!!!!! 
+ */
+
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection.Emit;
@@ -116,16 +120,19 @@ namespace MySQL_To_CSharp
                 Stopwatch sw = Stopwatch.StartNew();
                 DbToClasses(conf.Database, database, conf.GenerateConstructorAndOutput, conf.Constructor, conf.Namespace, path + @"\DTO\Containers\" + conf.Database);
                 // Search
-                DbToForm(path + @"\DTOContextForms\" + conf.Database + @"\search\", conf.Namespace, "SearchForm", database);
-                DbToDesigner(path + @"\DTOContextForms\" + conf.Database + @"\search\", conf.Namespace, "SearchForm", database);
+                DbToForm(path + @"\DTOContextForms\" + conf.Database + @"\search\", conf.Namespace, "SearchForm", "Search", database, "return", "Retour", "search", "Rechercher", "", "");
+                DbToDesigner(path + @"\DTOContextForms\" + conf.Database + @"\search\", conf.Namespace, "SearchForm", database, "return", "Retour", "search", "Rechercher", false);
 
                 // Update
-                DbToForm(path + @"\DTOContextForms\" + conf.Database + @"\update\", conf.Namespace, "UpdateForm", database);
-                DbToDesigner(path + @"\DTOContextForms\" + conf.Database + @"\update\", conf.Namespace, "UpdateForm", database);
+                DbToForm(path + @"\DTOContextForms\" + conf.Database + @"\update\", conf.Namespace, "UpdateForm", "Update", database, "return", "Retour", "update", "Appliquer", "IDTOContainer container", "container");
+                DbToDesigner(path + @"\DTOContextForms\" + conf.Database + @"\update\", conf.Namespace, "UpdateForm", database, "return", "Retour", "update", "Appliquer", false);
 
                 // Insert
-                DbToForm(path + @"\DTOContextForms\" + conf.Database + @"\insert\", conf.Namespace, "InsertForm", database);
-                DbToDesigner(path + @"\DTOContextForms\" + conf.Database + @"\insert\", conf.Namespace, "InsertForm", database);
+                DbToForm(path + @"\DTOContextForms\" + conf.Database + @"\insert\", conf.Namespace, "InsertForm", "Insert", database, "return", "Retour", "insert", "Insérer", "", "");
+                DbToDesigner(path + @"\DTOContextForms\" + conf.Database + @"\insert\", conf.Namespace, "InsertForm", database, "return", "Retour", "insert", "Insérer", true);
+
+                // WinFormsExt
+                GenerateDTOWinformsExt(path + @"\DTO\Containers\Ext", conf.Namespace, database);
                 if (conf.GenerateMarkupPages)
                     DbToMarkupPage(
                         string.IsNullOrEmpty(conf.MarkupDatabaseNameReplacement)
@@ -138,25 +145,19 @@ namespace MySQL_To_CSharp
             Console.ReadLine();
         }
 
-        private static void DbToWindowsForms(string path, string nmspace, string filename, Dictionary<string, List<Column>> db)
-        {
-            DbToForm(path, nmspace, filename, db);
-            DbToDesigner(path, nmspace, filename, db);
-        }
-
-        private static void DbToForm(string path, string nmspace, string filename, Dictionary<string, List<Column>> db)
+        private static void DbToForm(string path, string nmspace, string filename, string ctx, Dictionary<string, List<Column>> db, string btn1Name, string btn1Text, string btn2Name, string btn2Text, string args, string baseargs)
         {
             string filePartial = "Frm";
             foreach (var item in db)
             {
                 string className = filePartial + item.Key.FirstCharUpper() + filename;
-                TableToForm(path, $"{className}.cs",className, item.Key.FirstCharUpper(), nmspace, item.Value);
+                TableToForm(path, $"{className}.cs", className, item.Key.FirstCharUpper(), nmspace, ctx,item.Value, btn1Name, btn1Text, btn2Name, btn2Text, args, baseargs);
             }
         }
 
-        private static void TableToForm(string path, string filename, string className, string tablename, string nmspace, List<Column> cols)
+        private static void TableToForm(string path, string filename, string className, string tablename, string nmspace, string ctx, List<Column> cols, string btn1Name, string btn1Text, string btn2Name, string btn2Text, string args, string baseargs)
         {
-            Dictionary<string, List<Element>> colNamesDict = PopulateDict(cols);
+            Dictionary<string, List<Element>> colNamesDict = PopulateDict(cols, btn1Name, btn1Text, btn2Name, btn2Text);
 
             if (!Directory.Exists(path))
                 Directory.CreateDirectory(path);
@@ -175,23 +176,36 @@ using {nmspace}{Options.DTO_CONTAINERS_NMSP_PATH};
 
 namespace {nmspace}{Options.DTOFORMS_NMSP_PATH}
 {{
-    public partial class {className}: FrmSearch
+    public partial class {className}: Frm{ctx}
     {{
-        public {className}()
+        public {className}({args}) {(baseargs.Length > 0 ? $":base({baseargs})" : "")}
         {{
-            InitializeComponent();
+            InitializeComponent();";
+            if (ctx == "Update")
+                source += "\r\nSetValues();";
+            source += $@"
         }}
 
-        private void btnReturn_Click(object sender, EventArgs e)
+        private void btn{btn1Name.FirstCharUpper()}_Click(object sender, EventArgs e)
         {{
-            Return();
+            {btn1Name.FirstCharUpper()}();
         }}
 
-        private void btnSearch_Click(object sender, EventArgs e)
+        private void btn{btn2Name.FirstCharUpper()}_Click(object sender, EventArgs e)
         {{
-            {GenerateDTOConstruction(tablename + "DTOContainer",colNamesDict)}
-            Search(container);
-        }}
+            {GenerateDTOConstruction(tablename + "DTOContainer", colNamesDict, btn2Name == "insert")}
+            {btn2Name.FirstCharUpper()}(container);
+        }}";
+            if (ctx == "Update")
+            {
+                source += $@"
+        private void SetValues()
+        {{
+            Dictionary<string, object> reflectedValues = _container.ReflectProps();
+            {GenerateDTOContainerValuesBinder(colNamesDict)}
+        }}";
+            }
+source += $@"
     }}
 }}
 ";
@@ -200,7 +214,35 @@ namespace {nmspace}{Options.DTOFORMS_NMSP_PATH}
             sw.Close();
         }
 
-        private static string GenerateDTOConstruction(string dtoName, Dictionary<string, List<Element>> colNamesDict)
+        private static string GenerateDTOContainerValuesBinder(Dictionary<string, List<Element>> colNamesDict)
+        {
+            StringBuilder sb = new StringBuilder();
+            foreach (var els in colNamesDict.Values)
+            {
+                for (int i = 0; i < els.Count; i++)
+                {
+                    ColName colName = els[i].ColName;
+                    if (colName.WinFormsClass != "Label" && colName.WinFormsClass != "Button")
+                    {
+                        if (colName.WinFormsClass == "TextBox")
+                        {
+                            sb.AppendLine($"{colName.FullName}.Text = ({els[i].Type.Name})reflectedValues[\"{colName.NameNoCharUpper}\"];");
+                        }
+                        else if (colName.WinFormsClass == "NumericUpDown")
+                        {
+                            sb.AppendLine($"{colName.FullName}.Value = ({els[i].Type.Name})reflectedValues[\"{colName.NameNoCharUpper}\"];");
+                        }
+                        else
+                        {
+                            sb.AppendLine($"{colName.FullName}.Value = ({els[i].Type.FullName})reflectedValues[\"{colName.NameNoCharUpper}\"];");
+                        }
+                    }
+                }
+            }
+            return sb.ToString();
+        }
+
+        private static string GenerateDTOConstruction(string dtoName, Dictionary<string, List<Element>> colNamesDict, bool primaryIsNulls)
         {
             StringBuilder sb = new StringBuilder();
             sb.Append($"IDTOContainer container = new {dtoName}(");
@@ -214,15 +256,24 @@ namespace {nmspace}{Options.DTOFORMS_NMSP_PATH}
                     {
                         if (colName.WinFormsClass == "TextBox")
                         {
-                            parameters.Add($"{colName.FullName}.Text");
+                            if (primaryIsNulls && els[i].Column.IsPrimary)
+                                parameters.Add($"null");
+                            else
+                                parameters.Add($"{colName.FullName}.Text");
                         }
                         else if (colName.WinFormsClass == "NumericUpDown")
                         {
-                            parameters.Add($"({els[i].Type.Name}?){colName.FullName}.Value");
+                            if (primaryIsNulls && els[i].Column.IsPrimary)
+                                parameters.Add($"null");
+                            else
+                                parameters.Add($"({els[i].Type.Name}?){colName.FullName}.Value");
                         }
                         else
                         {
-                            parameters.Add($"{colName.FullName}.Value");
+                            if (primaryIsNulls && els[i].Column.IsPrimary)
+                                parameters.Add($"null");
+                            else
+                                parameters.Add($"{colName.FullName}.Value");
                         }
                     }
                 }
@@ -232,21 +283,32 @@ namespace {nmspace}{Options.DTOFORMS_NMSP_PATH}
             return sb.ToString();
         }
 
-        private static void DbToDesigner(string path, string nmspace, string filename, Dictionary<string, List<Column>> db)
+        private static void DbToDesigner(string path, string nmspace, string filename, Dictionary<string, List<Column>> db, string btn1Name, string btn1Text, string btn2Name, string btn2Text, bool excludePrimarys)
         {
+            if (excludePrimarys)
+            {
+                Dictionary<string, List<Column>> colNamesDictNoPri = new Dictionary<string, List<Column>>();
+                foreach (var item in db)
+                {
+                    List<Column> colsNoPri = item.Value.Where(i => i.IsPrimary == false).ToList();
+                    colNamesDictNoPri.Add(item.Key, colsNoPri);
+                }
+                db = colNamesDictNoPri;
+            }
+
             string filePartial = "Frm";
             foreach (var item in db)
             {
                 string className = filePartial + item.Key.FirstCharUpper() + filename;
-                TableToDesigner(path, $"{className}.Designer.cs", className, nmspace, item.Key, item.Value);
+                TableToDesigner(path, $"{className}.Designer.cs", className, nmspace, item.Key, item.Value, btn1Name, btn1Text, btn2Name, btn2Text);
             }
         }
 
-        private static void TableToDesigner(string path, string filename, string className, string nmspace, string nm, List<Column> cols)
+        private static void TableToDesigner(string path, string filename, string className, string nmspace, string nm, List<Column> cols, string btn1Name, string btn1Text, string btn2Name, string btn2Text)
         {
             nm.FirstCharUpper();
 
-            Dictionary<string, List<Element>> colNamesDict = PopulateDict(cols);
+            Dictionary<string, List<Element>> colNamesDict = PopulateDict(cols, btn1Name, btn1Text, btn2Name, btn2Text);
 
             if (!Directory.Exists(path))
                 Directory.CreateDirectory(path);
@@ -260,7 +322,7 @@ namespace {nmspace}{Options.DTOFORMS_NMSP_PATH}
             sb.Clear();
         }
 
-        private static Dictionary<string, List<Element>> PopulateDict(List<Column> cols)
+        private static Dictionary<string, List<Element>> PopulateDict(List<Column> cols, string btn1Name, string btn1Text, string btn2Name, string btn2Text)
         {
             Dictionary<string, List<Element>> colNamesDict = new Dictionary<string, List<Element>>();
             // populate dict
@@ -284,38 +346,103 @@ namespace {nmspace}{Options.DTOFORMS_NMSP_PATH}
                         Size = new Size(Options.ELEMENT_SIZE,20),
                         TabIndex = i+1,
                         Text = col.Name.FirstCharUpper(),
-                        Type = col.Type
+                        Type = col.Type,
+                        Column = col
                     }
                 });
                 i++;
             }
-            colNamesDict.Add("search", new List<Element>() {
-                new Element(new ColName("Search", Options.BUTTON_SUFFIX, Options.BUTTON_WINFORMS_CLASS))
+            colNamesDict.Add(btn1Name, new List<Element>() {
+                new Element(new ColName(btn1Name.FirstCharUpper(), Options.BUTTON_SUFFIX, Options.BUTTON_WINFORMS_CLASS))
                 {
                     FontSize = 18F,
                     Location = new Point(231,358),
                     Size = new Size(209,80),
                     TabIndex = i+1,
-                    Text = "Rechercher",
+                    Text = btn1Text,
                     ClickEvent = true
                 }
             });
-            colNamesDict.Add("return", new List<Element>() {
-                new Element(new ColName("Return", Options.BUTTON_SUFFIX, Options.BUTTON_WINFORMS_CLASS))
+            colNamesDict.Add(btn2Name, new List<Element>() {
+                new Element(new ColName(btn2Name.FirstCharUpper(), Options.BUTTON_SUFFIX, Options.BUTTON_WINFORMS_CLASS))
                 {
                     FontSize = 18F,
                     Location = new Point(12,358),
                     Size = new Size(209,80),
                     TabIndex = i+2,
-                    Text = "Retour",
+                    Text = btn2Text,
                     ClickEvent = true
                 }
             });
             return colNamesDict;
         }
 
+        private static void GenerateDTOWinformsExt(string path, string nmspace, Dictionary<string, List<Column>> db)
+        {
+            string source = $@"
+using {nmspace}.DTOContextForms;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Runtime.Versioning;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace {nmspace}.DTO.Containers.Ext
+{{
+    public static class DTOWinformsExt
+    {{
+        public static void ShowSearchForm(this IDTOContainer dtoContainer) 
+        {{
+            {GenerateWinFormsExtConditions("Search", "",db, false, false)}
+        }}
+        public static FrmUpdate? ShowUpdateForm(this IDTOContainer dtoContainer) 
+        {{
+            FrmUpdate? frm = null;
+            {GenerateWinFormsExtConditions("Update", "dtoContainer", db, true, true)}
+            return frm;
+        }}
+        public static void ShowInsertForm(this IDTOContainer dtoContainer) 
+        {{
+            {GenerateWinFormsExtConditions("Insert", "",db, false, false)}
+        }}
+
+    }}
+}}
+
+";
+            var sw = new StreamWriter($"{path}/DTOWinformsExt.cs", false);
+            sw.Write(source);
+            sw.Close();
+        }
+
+        private static string GenerateWinFormsExtConditions(string ctx, string parameters, Dictionary<string, List<Column>> db, bool showDialog, bool isUpdate)
+        {
+            StringBuilder sb = new StringBuilder();
+            foreach (var col in db)
+            {
+                sb.Append(GenerateWinFormsExtCondition(ctx, col.Key.FirstCharUpper(), parameters, showDialog, isUpdate));
+            }
+            return sb.ToString();
+        }
+
+        private static string GenerateWinFormsExtCondition(string ctx, string tableName,string parameters, bool showDialog, bool isUpdate)
+        {
+            string source = $@"
+            if (dtoContainer is {tableName}DTOContainer)
+            {{
+                {(isUpdate ? "" : $"Frm{tableName}{ctx}Form")} frm = new Frm{tableName}{ctx}Form({parameters});
+                {(showDialog ? "frm.DialogResult = frm.ShowDialog();" : "frm.Show();")}
+            }}";
+            return source;
+        }
+
         private static string GenerateTableDesignerSourceCode(string nmspace, string className, Dictionary<string, List<Element>> colNamesDict)
         {
+
+
             string source = $@"
 namespace {nmspace}{Options.DTOFORMS_NMSP_PATH}
 {{

@@ -8,6 +8,7 @@ namespace MySQL_To_CSharp
 {
     public class ColName
     {
+        public string NameNoCharUpper { get; set; }
         public string Name {  get; set; }
         public string Suffix { get; set; }
         public string WinFormsClass { get; set; }
@@ -15,6 +16,7 @@ namespace MySQL_To_CSharp
 
         public ColName(Column col)
         {
+            NameNoCharUpper = col.Name;
             Name = col.Name.FirstCharUpper();
             Suffix = ResolveTypeSuffix(col);
             WinFormsClass = ResolveTypeParseWinFormsType(col);

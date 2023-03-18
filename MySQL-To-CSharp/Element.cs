@@ -18,6 +18,7 @@ namespace MySQL_To_CSharp
         public string Text { get; set; }
         public bool ClickEvent { get; set; }
         public Type Type { get; set; }
+        public Column Column { get; set; }
 
         public Element(ColName colName)
         {
