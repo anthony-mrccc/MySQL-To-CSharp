@@ -19,5 +19,6 @@ namespace MySQL_To_CSharp
         public const int SPACE_ELEMENTS = 50;
         public const string DTO_CONTAINERS_NMSP_PATH = ".DTO.Containers";
         public const string DTOFORMS_NMSP_PATH = ".DTOContextForms";
+        public const int ELEMENT_SIZE_SEARCH = 200;
     }
 }

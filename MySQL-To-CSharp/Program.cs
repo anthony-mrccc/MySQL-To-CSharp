@@ -120,16 +120,16 @@ namespace MySQL_To_CSharp
                 Stopwatch sw = Stopwatch.StartNew();
                 DbToClasses(conf.Database, database, conf.GenerateConstructorAndOutput, conf.Constructor, conf.Namespace, path + @"\DTO\Containers\" + conf.Database);
                 // Search
-                DbToForm(path + @"\DTOContextForms\" + conf.Database + @"\search\", conf.Namespace, "SearchForm", "Search", database, "return", "Retour", "search", "Rechercher", "", "");
-                DbToDesigner(path + @"\DTOContextForms\" + conf.Database + @"\search\", conf.Namespace, "SearchForm", database, "return", "Retour", "search", "Rechercher", false);
+                DbToForm(path + @"\DTOContextForms\" + conf.Database + @"\search\", conf.Namespace, "SearchForm", "Search", database, "return", "Retour", "search", "Rechercher", "", "", true);
+                DbToDesigner(path + @"\DTOContextForms\" + conf.Database + @"\search\", conf.Namespace, "SearchForm", database, "return", "Retour", "search", "Rechercher", false, true);
 
                 // Update
-                DbToForm(path + @"\DTOContextForms\" + conf.Database + @"\update\", conf.Namespace, "UpdateForm", "Update", database, "return", "Retour", "update", "Appliquer", "IDTOContainer container", "container");
-                DbToDesigner(path + @"\DTOContextForms\" + conf.Database + @"\update\", conf.Namespace, "UpdateForm", database, "return", "Retour", "update", "Appliquer", false);
+                DbToForm(path + @"\DTOContextForms\" + conf.Database + @"\update\", conf.Namespace, "UpdateForm", "Update", database, "return", "Retour", "update", "Appliquer", "IDTOContainer container", "container", false);
+                DbToDesigner(path + @"\DTOContextForms\" + conf.Database + @"\update\", conf.Namespace, "UpdateForm", database, "return", "Retour", "update", "Appliquer", false, false);
 
                 // Insert
-                DbToForm(path + @"\DTOContextForms\" + conf.Database + @"\insert\", conf.Namespace, "InsertForm", "Insert", database, "return", "Retour", "insert", "Insérer", "", "");
-                DbToDesigner(path + @"\DTOContextForms\" + conf.Database + @"\insert\", conf.Namespace, "InsertForm", database, "return", "Retour", "insert", "Insérer", true);
+                DbToForm(path + @"\DTOContextForms\" + conf.Database + @"\insert\", conf.Namespace, "InsertForm", "Insert", database, "return", "Retour", "insert", "Insérer", "", "", false);
+                DbToDesigner(path + @"\DTOContextForms\" + conf.Database + @"\insert\", conf.Namespace, "InsertForm", database, "return", "Retour", "insert", "Insérer", true, false);
 
                 // WinFormsExt
                 GenerateDTOWinformsExt(path + @"\DTO\Containers\Ext", conf.Namespace, database);
@@ -145,19 +145,19 @@ namespace MySQL_To_CSharp
             Console.ReadLine();
         }
 
-        private static void DbToForm(string path, string nmspace, string filename, string ctx, Dictionary<string, List<Column>> db, string btn1Name, string btn1Text, string btn2Name, string btn2Text, string args, string baseargs)
+        private static void DbToForm(string path, string nmspace, string filename, string ctx, Dictionary<string, List<Column>> db, string btn1Name, string btn1Text, string btn2Name, string btn2Text, string args, string baseargs, bool isSearch)
         {
             string filePartial = "Frm";
             foreach (var item in db)
             {
                 string className = filePartial + item.Key.FirstCharUpper() + filename;
-                TableToForm(path, $"{className}.cs", className, item.Key.FirstCharUpper(), nmspace, ctx,item.Value, btn1Name, btn1Text, btn2Name, btn2Text, args, baseargs);
+                TableToForm(path, $"{className}.cs", className, item.Key.FirstCharUpper(), nmspace, ctx,item.Value, btn1Name, btn1Text, btn2Name, btn2Text, args, baseargs, isSearch);
             }
         }
 
-        private static void TableToForm(string path, string filename, string className, string tablename, string nmspace, string ctx, List<Column> cols, string btn1Name, string btn1Text, string btn2Name, string btn2Text, string args, string baseargs)
+        private static void TableToForm(string path, string filename, string className, string tablename, string nmspace, string ctx, List<Column> cols, string btn1Name, string btn1Text, string btn2Name, string btn2Text, string args, string baseargs, bool isSearch)
         {
-            Dictionary<string, List<Element>> colNamesDict = PopulateDict(cols, btn1Name, btn1Text, btn2Name, btn2Text);
+            Dictionary<string, List<Element>> colNamesDict = PopulateDict(cols, (isSearch ? Options.ELEMENT_SIZE_SEARCH : Options.ELEMENT_SIZE),btn1Name, btn1Text, btn2Name, btn2Text, isSearch);
 
             if (!Directory.Exists(path))
                 Directory.CreateDirectory(path);
@@ -193,9 +193,22 @@ namespace {nmspace}{Options.DTOFORMS_NMSP_PATH}
 
         private void btn{btn2Name.FirstCharUpper()}_Click(object sender, EventArgs e)
         {{
-            {GenerateDTOConstruction(tablename + "DTOContainer", colNamesDict, btn2Name == "insert")}
-            {btn2Name.FirstCharUpper()}(container);
-        }}";
+            {GenerateDTOConstruction(tablename + "DTOContainer", colNamesDict, btn2Name == "insert")}";
+            if (ctx == "Search")
+            {
+                source += $@"
+                string[] values = Controls.Cast<Control>()
+                .Where(c => c is CheckBox chb)
+                .Where(chb => ((CheckBox)chb).Checked)
+                .Select(chb => chb.Tag.ToString())
+                .ToArray();
+            Search(container, values);";
+            }
+            else
+            {
+                source += $@"{btn2Name.FirstCharUpper()}(container);";
+            }
+            source += $@"}}";
             if (ctx == "Update")
             {
                 source += $@"
@@ -252,7 +265,7 @@ source += $@"
                 for (int i = 0; i < els.Count; i++)
                 {
                     ColName colName = els[i].ColName;
-                    if (colName.WinFormsClass != "Label" && colName.WinFormsClass != "Button")
+                    if (colName.WinFormsClass != "Label" && colName.WinFormsClass != "Button" && colName.WinFormsClass != "CheckBox")
                     {
                         if (colName.WinFormsClass == "TextBox")
                         {
@@ -279,11 +292,11 @@ source += $@"
                 }
             }
             sb.Append(string.Join(",", parameters));
-            sb.Append(");");
+            sb.AppendLine(");");
             return sb.ToString();
         }
 
-        private static void DbToDesigner(string path, string nmspace, string filename, Dictionary<string, List<Column>> db, string btn1Name, string btn1Text, string btn2Name, string btn2Text, bool excludePrimarys)
+        private static void DbToDesigner(string path, string nmspace, string filename, Dictionary<string, List<Column>> db, string btn1Name, string btn1Text, string btn2Name, string btn2Text, bool excludePrimarys, bool isSearch)
         {
             if (excludePrimarys)
             {
@@ -300,15 +313,15 @@ source += $@"
             foreach (var item in db)
             {
                 string className = filePartial + item.Key.FirstCharUpper() + filename;
-                TableToDesigner(path, $"{className}.Designer.cs", className, nmspace, item.Key, item.Value, btn1Name, btn1Text, btn2Name, btn2Text);
+                TableToDesigner(path, $"{className}.Designer.cs", className, nmspace, item.Key, item.Value, btn1Name, btn1Text, btn2Name, btn2Text, isSearch);
             }
         }
 
-        private static void TableToDesigner(string path, string filename, string className, string nmspace, string nm, List<Column> cols, string btn1Name, string btn1Text, string btn2Name, string btn2Text)
+        private static void TableToDesigner(string path, string filename, string className, string nmspace, string nm, List<Column> cols, string btn1Name, string btn1Text, string btn2Name, string btn2Text, bool isSearch)
         {
             nm.FirstCharUpper();
 
-            Dictionary<string, List<Element>> colNamesDict = PopulateDict(cols, btn1Name, btn1Text, btn2Name, btn2Text);
+            Dictionary<string, List<Element>> colNamesDict = PopulateDict(cols, (isSearch ? Options.ELEMENT_SIZE_SEARCH : Options.ELEMENT_SIZE),btn1Name, btn1Text, btn2Name, btn2Text, isSearch);
 
             if (!Directory.Exists(path))
                 Directory.CreateDirectory(path);
@@ -322,38 +335,53 @@ source += $@"
             sb.Clear();
         }
 
-        private static Dictionary<string, List<Element>> PopulateDict(List<Column> cols, string btn1Name, string btn1Text, string btn2Name, string btn2Text)
+        private static Dictionary<string, List<Element>> PopulateDict(List<Column> cols, int elementsize, string btn1Name, string btn1Text, string btn2Name, string btn2Text, bool isSearch)
         {
             Dictionary<string, List<Element>> colNamesDict = new Dictionary<string, List<Element>>();
             // populate dict
             int i = 0;
             foreach (var col in cols)
             {
-                colNamesDict.Add(col.Name, new List<Element>()
+                List<Element> els = new List<Element>()
                 {
-                    new Element(new ColName(col.Name.FirstCharUpper(),Options.LABEL_SUFFIX, Options.LABEL_WINFORMS_CLASS)) // Label
+                    new Element(new ColName(col.Name, col.Name.FirstCharUpper(),Options.LABEL_SUFFIX, Options.LABEL_WINFORMS_CLASS)) // Label
                     {
                         FontSize = 14F,
                         Location = new Point(Options.startPoint.X, Options.startPoint.Y + Options.SPACE_ELEMENTS * i),
                         Size = new Size(30,30),
-                        TabIndex = i,
+                        TabIndex = 3*i,
                         Text = col.Name.FirstCharUpper(),
                     },
                     new Element(new ColName(col)) // Field
                     {
                         FontSize = 14F,
                         Location = new Point(Options.startPoint.X + Options.DISTANCE_LABEL_ELEMENT,Options.startPoint.Y + Options.SPACE_ELEMENTS * i),
-                        Size = new Size(Options.ELEMENT_SIZE,20),
-                        TabIndex = i+1,
+                        Size = new Size(elementsize,20),
+                        TabIndex = 3*i + 1,
                         Text = col.Name.FirstCharUpper(),
                         Type = col.Type,
                         Column = col
                     }
-                });
+                };
+                if (isSearch)
+                {
+                    Element el = new Element(new ColName($"{col.Name}", $"Include{col.Name.FirstCharUpper()}", "chb", "CheckBox")) // CheckBox
+                    {
+                        FontSize = 14F,
+                        Location = new Point(Options.startPoint.X + elementsize + Options.DISTANCE_LABEL_ELEMENT + 10, Options.startPoint.Y + Options.SPACE_ELEMENTS * i),
+                        Size = new Size(elementsize, 20),
+                        TabIndex = 3*i + 2,
+                        Text = "Include",
+                        Type = col.Type,
+                        Column = col
+                    };
+                    els.Add(el);
+                }
+                colNamesDict.Add(col.Name, els);
                 i++;
             }
             colNamesDict.Add(btn1Name, new List<Element>() {
-                new Element(new ColName(btn1Name.FirstCharUpper(), Options.BUTTON_SUFFIX, Options.BUTTON_WINFORMS_CLASS))
+                new Element(new ColName(btn1Name, btn1Name.FirstCharUpper(), Options.BUTTON_SUFFIX, Options.BUTTON_WINFORMS_CLASS))
                 {
                     FontSize = 18F,
                     Location = new Point(231,358),
@@ -364,7 +392,7 @@ source += $@"
                 }
             });
             colNamesDict.Add(btn2Name, new List<Element>() {
-                new Element(new ColName(btn2Name.FirstCharUpper(), Options.BUTTON_SUFFIX, Options.BUTTON_WINFORMS_CLASS))
+                new Element(new ColName(btn2Name, btn2Name.FirstCharUpper(), Options.BUTTON_SUFFIX, Options.BUTTON_WINFORMS_CLASS))
                 {
                     FontSize = 18F,
                     Location = new Point(12,358),

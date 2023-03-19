@@ -22,8 +22,9 @@ namespace MySQL_To_CSharp
             WinFormsClass = ResolveTypeParseWinFormsType(col);
         }
 
-        public ColName(string name, string suffix, string winFormsClass)
+        public ColName(string nameNoCharUpper, string name, string suffix, string winFormsClass)
         {
+            NameNoCharUpper = nameNoCharUpper;
             Name = name;
             Suffix = suffix;
             WinFormsClass = winFormsClass;

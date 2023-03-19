@@ -44,6 +44,8 @@ namespace MySQL_To_CSharp
                     return GeneratePropsTextBox();
                 case "DateTimePicker":
                     return GeneratePropsDateTimePicker();
+                case "CheckBox":
+                    return GeneratePropsCheckBox();
                 default:
                     return "";
             }
@@ -139,6 +141,25 @@ namespace MySQL_To_CSharp
             this.{ColName.FullName}.Size = new System.Drawing.Size({Size.Width}, {Size.Height});
             this.{ColName.FullName}.TabIndex = {TabIndex};
 ";
+            return source;
+        }
+
+        private string GeneratePropsCheckBox()
+        {
+            string source = $@"            
+            // 
+            // {ColName.FullName}
+            // 
+            this.{ColName.FullName}.AutoSize = true;
+            this.{ColName.FullName}.Checked = true;
+            this.{ColName.FullName}.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.{ColName.FullName}.Location = new System.Drawing.Point({Location.X}, {Location.Y});
+            this.{ColName.FullName}.Name = ""{ColName.FullName}"";
+            this.{ColName.FullName}.Size = new System.Drawing.Size({Size.Width}, {Size.Height});
+            this.{ColName.FullName}.TabIndex = {TabIndex};
+            this.{ColName.FullName}.Text = ""{Text}"";
+            this.{ColName.FullName}.Tag = ""{ColName.NameNoCharUpper}"";
+            this.{ColName.FullName}.Font = new System.Drawing.Font(""Microsoft Sans Serif"", {FontSize}F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));";
             return source;
         }
     }
